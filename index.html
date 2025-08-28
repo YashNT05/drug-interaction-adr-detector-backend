@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clinical Interaction & ADR Checker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            background: linear-gradient(to right, #13547a, #80d0c7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 1rem;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            width: 100%;
+            max-width: 42rem;
+        }
+
+        .input-container {
+            position: relative;
+        }
+        
+        .light-input, .light-textarea, .light-select {
+            background-color: #f3f4f6;
+            color: #1f2937;
+        }
+        .light-input::placeholder, .light-textarea::placeholder {
+            color: #6b7280;
+        }
+        .light-input:focus, .light-textarea:focus, .light-select:focus {
+            --tw-ring-color: #3b82f6;
+        }
+
+        .autocomplete-results {
+            position: absolute;
+            top: 100%; left: 0; right: 0; z-index: 10;
+            background-color: #ffffff;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem; margin-top: 4px;
+            max-height: 200px; overflow-y: auto;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .autocomplete-item {
+            padding: 0.75rem 1rem; cursor: pointer; color: #1f2937; transition: background-color 0.2s ease;
+        }
+        .autocomplete-item:hover {
+            background-color: #f3f4f6;
+        }
+
+        .loader {
+            border-top-color: #60a5fa;
+            -webkit-animation: spin 1s linear infinite;
+            animation: spin 1s linear infinite;
+        }
+        @-webkit-keyframes spin { 0% { -webkit-transform: rotate(0deg); } 100% { -webkit-transform: rotate(360deg); } }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .toggle-btn {
+            cursor: pointer; padding: 0.5rem 1rem; border: 1px solid rgba(255, 255, 255, 0.3); transition: all 0.3s ease; color: rgba(255, 255, 255, 0.7);
+        }
+        .toggle-btn.active { background-color: rgba(96, 165, 250, 0.5); color: white; font-weight: 600; }
+        .toggle-btn:first-of-type { border-top-left-radius: 0.5rem; border-bottom-left-radius: 0.5rem; }
+        .toggle-btn:last-of-type { border-top-right-radius: 0.5rem; border-bottom-right-radius: 0.5rem; }
+        
+        .signature {
+            position: fixed; bottom: 1rem; right: 1rem;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 0.875rem; color: rgba(255, 255, 255, 0.6); z-index: 50;
+        }
+    </style>
+</head>
+<body class="text-white">
+
+    <div class="glass-card p-6 sm:p-8">
+        <div class="relative z-10">
+            <header class="text-center mb-6">
+                <h1 class="text-4xl sm:text-5xl font-bold text-white drop-shadow-lg" style="text-shadow: 0 0 15px rgba(255,255,255,0.3);">Clinical Checker</h1>
+                <p class="text-gray-300 mt-2">Check for Drug Interactions or Adverse Reactions.</p>
+            </header>
+
+            <main>
+                <div class="flex justify-center mb-6">
+                    <div id="mode-toggle" class="inline-flex rounded-lg" role="group">
+                        <button type="button" class="toggle-btn active" data-mode="interactions">Drug-Drug Interaction</button>
+                        <button type="button" class="toggle-btn" data-mode="adr">Adverse Reactions</button>
+                        <button type="button" class="toggle-btn" data-mode="adr-detector">ADR Detector</button>
+                    </div>
+                </div>
+
+                <div id="interactions-form" class="space-y-4">
+                    <div class="input-container">
+                        <label for="drug1" class="block text-sm font-medium text-gray-200 mb-1">Drug A</label>
+                        <input type="text" id="drug1" class="light-input w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none transition-all" placeholder="Loading drug list..." autocomplete="off">
+                        <div id="drug1-results" class="autocomplete-results hidden"></div>
+                    </div>
+                    <div class="input-container">
+                        <label for="drug2" class="block text-sm font-medium text-gray-200 mb-1">Drug B</label>
+                        <input type="text" id="drug2" class="light-input w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none transition-all" placeholder="Loading drug list..." autocomplete="off">
+                        <div id="drug2-results" class="autocomplete-results hidden"></div>
+                    </div>
+                </div>
+
+                <div id="adr-form" class="hidden space-y-4">
+                     <div class="input-container">
+                        <label for="adr-drug" class="block text-sm font-medium text-gray-200 mb-1">Drug Name</label>
+                        <input type="text" id="adr-drug" class="light-input w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none transition-all" placeholder="e.g., Lisinopril" autocomplete="off">
+                        <div id="adr-drug-results" class="autocomplete-results hidden"></div>
+                    </div>
+                    <div>
+                        <label for="adr-reaction" class="block text-sm font-medium text-gray-200 mb-1">Adverse Reaction</label>
+                        <select id="adr-reaction" class="light-select w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none transition-all">
+                            <option value="" disabled selected>Select a reaction...</option>
+                            <optgroup label="General & Common">
+                                <option value="Dizziness">Dizziness</option>
+                                <option value="Headache">Headache</option>
+                                <option value="Nausea">Nausea</option>
+                                <option value="Fatigue">Fatigue</option>
+                                <option value="Fever">Fever</option>
+                                <option value="Insomnia">Insomnia</option>
+                            </optgroup>
+                            <optgroup label="Skin Reactions">
+                                <option value="Rash">Rash</option>
+                                <option value="Itching">Itching</option>
+                                <option value="Hives">Hives</option>
+                                <option value="Dry skin">Dry skin</option>
+                            </optgroup>
+                            <optgroup label="Digestive Issues">
+                                <option value="Diarrhea">Diarrhea</option>
+                                <option value="Constipation">Constipation</option>
+                                <option value="Vomiting">Vomiting</option>
+                                <option value="Stomach pain">Stomach pain</option>
+                            </optgroup>
+                            <optgroup label="Respiratory & Sensory">
+                                <option value="Cough">Cough</option>
+                                <option value="Shortness of breath">Shortness of breath</option>
+                                <option value="Blurred vision">Blurred vision</option>
+                                <option value="Dry mouth">Dry mouth</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                </div>
+                
+                <div id="adr-detector-form" class="hidden space-y-4">
+                    <p class="text-center text-gray-300">Paste a patient review or note to check for adverse reactions.</p>
+                    <div>
+                        <label for="adr-text" class="block text-sm font-medium text-gray-200 mb-1">Patient Review Text</label>
+                        <textarea id="adr-text" rows="4" class="light-textarea w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none transition-all" placeholder="e.g., 'After taking this medicine, I started feeling dizzy and got a rash.'"></textarea>
+                    </div>
+                </div>
+
+                <div class="mt-6 sm:mt-8 flex justify-center items-center space-x-4">
+                    <button id="check-button" class="w-auto bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-8 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-300 ease-in-out">Check</button>
+                    <button id="clear-button" class="w-auto bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-8 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-300 ease-in-out">Clear</button>
+                </div>
+
+                <div id="loader" class="hidden justify-center items-center mt-6"><div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200/20 h-12 w-12"></div></div>
+                <div id="results" class="mt-6 sm:mt-8"></div>
+                <div id="error" class="mt-4 text-red-300 text-center font-semibold"></div>
+            </main>
+        </div>
+    </div>
+    
+    <footer class="text-center mt-6 text-xs text-gray-200 max-w-2xl"><p>Disclaimer: This tool is for informational purposes only and is not a substitute for professional medical advice.</p></footer>
+    
+    <div class="signature">-YashNT</div>
+
+    <script>
+        let currentMode = 'interactions';
+        let drugList = [];
+
+        // --- Elements ---
+        const modeToggle = document.getElementById('mode-toggle');
+        const interactionsForm = document.getElementById('interactions-form');
+        const adrForm = document.getElementById('adr-form');
+        const adrDetectorForm = document.getElementById('adr-detector-form');
+        const checkButton = document.getElementById('check-button');
+        const clearButton = document.getElementById('clear-button');
+        const resultsDiv = document.getElementById('results');
+        const errorDiv = document.getElementById('error');
+        const loader = document.getElementById('loader');
+        
+        const drug1Input = document.getElementById('drug1');
+        const drug2Input = document.getElementById('drug2');
+        const adrDrugInput = document.getElementById('adr-drug');
+        const adrReactionInput = document.getElementById('adr-reaction');
+        const adrTextInput = document.getElementById('adr-text');
+
+        const drug1Results = document.getElementById('drug1-results');
+        const drug2Results = document.getElementById('drug2-results');
+        const adrDrugResults = document.getElementById('adr-drug-results');
+
+        // --- Initial Setup ---
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const response = await fetch('http://127.0.0.1:5000/drugs');
+                if (!response.ok) throw new Error('Could not fetch drug list');
+                drugList = await response.json();
+                drug1Input.placeholder = 'e.g., Ciprofloxacin';
+                drug2Input.placeholder = 'e.g., Digoxin';
+                adrDrugInput.placeholder = 'e.g., Lisinopril';
+            } catch (error) {
+                console.error('API Status Check Failed:', error);
+                drug1Input.placeholder = 'Error loading drugs';
+                drug2Input.placeholder = 'Error loading drugs';
+                adrDrugInput.placeholder = 'Error loading drugs';
+            }
+        });
+        
+        // --- Autocomplete Logic ---
+        const getDrugSuggestions = (query, resultsContainer) => {
+            if (query.length < 1) {
+                resultsContainer.innerHTML = '';
+                resultsContainer.classList.add('hidden');
+                return;
+            }
+            const lowerCaseQuery = query.toLowerCase();
+            const suggestions = drugList.filter(drug => drug.toLowerCase().startsWith(lowerCaseQuery));
+            displaySuggestions(suggestions.slice(0, 100), resultsContainer);
+        };
+
+        const displaySuggestions = (suggestions, resultsContainer) => {
+            if (suggestions.length === 0) {
+                resultsContainer.classList.add('hidden');
+                return;
+            }
+            resultsContainer.innerHTML = suggestions.map(s => `<div class="autocomplete-item">${s}</div>`).join('');
+            resultsContainer.classList.remove('hidden');
+        };
+
+        const setupAutocomplete = (inputElement, resultsContainer) => {
+            inputElement.addEventListener('keyup', () => getDrugSuggestions(inputElement.value, resultsContainer));
+            resultsContainer.addEventListener('click', (e) => {
+                if (e.target.classList.contains('autocomplete-item')) {
+                    inputElement.value = e.target.textContent;
+                    resultsContainer.innerHTML = '';
+                    resultsContainer.classList.add('hidden');
+                }
+            });
+        };
+
+        setupAutocomplete(drug1Input, drug1Results);
+        setupAutocomplete(drug2Input, drug2Results);
+        setupAutocomplete(adrDrugInput, adrDrugResults);
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.input-container')) {
+                drug1Results.classList.add('hidden');
+                drug2Results.classList.add('hidden');
+                adrDrugResults.classList.add('hidden');
+            }
+        });
+
+        // --- UI Mode Switching ---
+        modeToggle.addEventListener('click', (e) => {
+            if (e.target.tagName === 'BUTTON') {
+                const newMode = e.target.dataset.mode;
+                if (newMode !== currentMode) {
+                    currentMode = newMode;
+                    updateFormUI();
+                }
+            }
+        });
+
+        const updateFormUI = () => {
+            clearFeedback();
+            interactionsForm.classList.add('hidden');
+            adrForm.classList.add('hidden');
+            adrDetectorForm.classList.add('hidden');
+            
+            document.querySelectorAll('#mode-toggle .toggle-btn').forEach(btn => btn.classList.remove('active'));
+
+            if (currentMode === 'interactions') {
+                interactionsForm.classList.remove('hidden');
+                modeToggle.querySelector('[data-mode="interactions"]').classList.add('active');
+            } else if (currentMode === 'adr') {
+                adrForm.classList.remove('hidden');
+                modeToggle.querySelector('[data-mode="adr"]').classList.add('active');
+            } else if (currentMode === 'adr-detector') {
+                adrDetectorForm.classList.remove('hidden');
+                modeToggle.querySelector('[data-mode="adr-detector"]').classList.add('active');
+            }
+        };
+
+        // --- Button Event Listeners ---
+        checkButton.addEventListener('click', () => {
+            if (currentMode === 'interactions') checkInteractions();
+            else if (currentMode === 'adr') checkADR();
+            else if (currentMode === 'adr-detector') checkADRFromText();
+        });
+
+        clearButton.addEventListener('click', () => {
+            drug1Input.value = '';
+            drug2Input.value = '';
+            adrDrugInput.value = '';
+            adrReactionInput.value = '';
+            adrTextInput.value = '';
+            clearFeedback();
+        });
+
+        // --- API Call and Display Logic ---
+        async function checkInteractions() {
+            const drug1 = drug1Input.value.trim();
+            const drug2 = drug2Input.value.trim();
+            clearFeedback();
+            if (!drug1 || !drug2) {
+                displayError('Please enter both drug names.');
+                return;
+            }
+            showLoader(true);
+            try {
+                const backendUrl = `http://127.0.0.1:5000/interaction?drug1=${encodeURIComponent(drug1)}&drug2=${encodeURIComponent(drug2)}`;
+                const response = await fetch(backendUrl);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `Request failed`);
+                }
+                const data = await response.json();
+                displayInteractionResults(data, drug1, drug2);
+            } catch (err) {
+                displayError(err.message || 'An API error occurred.');
+            } finally {
+                showLoader(false);
+            }
+        }
+        
+        function displayInteractionResults(data, drug1Name, drug2Name) {
+            if (data && data.riskLevel) {
+                const riskColor = data.riskLevel === 'High' ? 'text-red-400' : (data.riskLevel === 'Medium' ? 'text-yellow-400' : 'text-green-400');
+                
+                resultsDiv.innerHTML = `
+                    <div class="space-y-4 text-gray-200">
+                        <h2 class="text-2xl font-bold text-center text-white">Interaction Analysis</h2>
+                        <div><p class="text-sm font-medium text-gray-400">Potential Risk Level</p><p class="text-xl font-semibold ${riskColor}">${data.riskLevel}</p></div>
+                        <div><p class="text-sm font-medium text-gray-400">Confidence Score</p><p class="text-lg">${data.confidenceScore}</p></div>
+                        <div><p class="text-sm font-medium text-gray-400">Interaction Theme</p><p class="text-lg font-semibold">${data.interactionTheme}</p></div>
+                        <div><p class="text-sm font-medium text-gray-400">Example Description from Dataset</p><div class="p-3 mt-1 bg-white/10 rounded-lg italic">"${data.description}"</div></div>
+                    </div>`;
+            } else {
+                 resultsDiv.innerHTML = `<div class="bg-green-500/30 border border-green-400/50 text-white p-4 rounded-lg shadow-lg"><p class="font-bold text-lg text-center">No significant interactions found between ${capitalize(drug1Name)} and ${capitalize(drug2Name)}.</p></div>`;
+            }
+        }
+
+        async function checkADR() {
+            const drugName = adrDrugInput.value.trim();
+            const reaction = adrReactionInput.value;
+            
+            clearFeedback();
+            if (!drugName || !reaction) {
+                displayError('Please enter a drug and select a reaction.');
+                return;
+            }
+            showLoader(true);
+            try {
+                const rxcui = await getRxcui(drugName);
+                
+                if (!rxcui) {
+                    displayError(`Could not find drug information for "${drugName}".`);
+                    showLoader(false);
+                    return;
+                }
+
+                // --- CORRECTED URL CONSTRUCTION ---
+                const url = `https://api.fda.gov/drug/event.json?search=patient.drug.openfda.rxcui.exact:"${rxcui}"+AND+patient.reaction.reactionmeddrapt.exact:"${reaction}"&count=patient.reaction.reactionmeddrapt.exact`;
+                
+                const response = await fetch(url);
+                if (response.status === 404) {
+                    // Handle the case where the API returns 404 for "no results"
+                    displayAdrResults({ results: [] }, drugName, reaction);
+                    return;
+                }
+                const data = await response.json();
+                displayAdrResults(data, drugName, reaction);
+            } catch (err) {
+                console.error("ADR Check Error:", err);
+                displayError('An API error occurred while fetching ADR data.');
+            } finally {
+                showLoader(false);
+            }
+        }
+        
+        async function getRxcui(drugName) {
+            try {
+                const url = `https://rxnav.nlm.nih.gov/REST/rxcui.json?name=${encodeURIComponent(drugName)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                return data.idGroup.rxnormId ? data.idGroup.rxnormId[0] : null;
+            } catch (error) {
+                console.error(`Error fetching RxCUI for ${drugName}:`, error);
+                return null;
+            }
+        }
+        
+        function displayAdrResults(data, drugName, reaction) {
+             if (data.results && data.results.length > 0) {
+                const count = data.results[0].count;
+                resultsDiv.innerHTML = `<div class="bg-blue-500/30 border border-blue-400/50 text-white p-4 rounded-lg shadow-lg">
+                                          <p class="font-bold text-lg text-center">Adverse Reaction Reports Found</p>
+                                          <p class="text-center mt-2">The FDA has received <strong>${count.toLocaleString()}</strong> reports of "<strong>${capitalize(reaction)}</strong>" as a potential adverse reaction for patients taking <strong>${capitalize(drugName)}</strong>.</p>
+                                          <p class="text-xs text-center mt-3 text-gray-300">This data does not imply causation. Consult a healthcare professional for medical advice.</p>
+                                      </div>`;
+            } else {
+                resultsDiv.innerHTML = `<div class="bg-green-500/30 border border-green-400/50 text-white p-4 rounded-lg shadow-lg">
+                                          <p class="font-bold text-lg text-center">No specific adverse reaction reports found for "${capitalize(reaction)}" with ${capitalize(drugName)} in the FDA database.</p>
+                                      </div>`;
+            }
+        }
+
+        async function checkADRFromText() {
+            const text = adrTextInput.value.trim();
+            clearFeedback();
+            if (!text) {
+                displayError('Please enter some patient review text.');
+                return;
+            }
+            showLoader(true);
+            try {
+                const backendUrl = `http://127.0.0.1:5000/adr-from-text`;
+                const response = await fetch(backendUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text })
+                });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `Request failed`);
+                }
+                const data = await response.json();
+                displayAdrFromTextResults(data);
+            } catch (err) {
+                displayError(err.message || 'An API error occurred.');
+            } finally {
+                showLoader(false);
+            }
+        }
+
+        function displayAdrFromTextResults(data) {
+            if (data.detections && data.detections.length > 0) {
+                 let html = `<h2 class="text-2xl font-bold text-center mb-4 text-white drop-shadow-md">Potential ADRs Detected</h2>`;
+                 data.detections.forEach(detection => {
+                     html += `<div class="bg-blue-500/30 border border-blue-400/50 text-white p-4 rounded-lg mb-4 shadow-lg">
+                                <p><strong>Associated Drug:</strong> ${capitalize(detection.drug)}</p>
+                                <p><strong>Potential Reaction:</strong> ${capitalize(detection.reaction)}</p>
+                            </div>`;
+                 });
+                 resultsDiv.innerHTML = html;
+            } else {
+                resultsDiv.innerHTML = `<div class="bg-green-500/30 border border-green-400/50 text-white p-4 rounded-lg shadow-lg"><p class="font-bold text-lg text-center">No specific adverse drug reactions were detected in the provided text.</p></div>`;
+            }
+        }
+
+        // --- Helper Functions ---
+        const displayError = (message) => { errorDiv.textContent = message; };
+        const clearFeedback = () => { resultsDiv.innerHTML = ''; errorDiv.textContent = ''; };
+        const showLoader = (isLoading) => {
+            loader.classList.toggle('hidden', !isLoading);
+            loader.classList.toggle('flex', isLoading);
+            checkButton.disabled = isLoading;
+            checkButton.classList.toggle('opacity-50', isLoading);
+            checkButton.classList.toggle('cursor-not-allowed', isLoading);
+        };
+        const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+    </script>
+</body>
+</html>
